@@ -232,4 +232,8 @@ print(
     sum(df_result.isna().sum().values),
     int(df_result.duplicated().sum()),
 )
-print(header)
+
+# 읽어온 파일의 헤더를 'tolist()'를 활용하여 호출
+# print(df_result.columns)          # Index(['검사일시', '생산라인', '라인코드', ...], dtype='object')
+# print(df_result.columns.tolist()) # ['검사일시', '생산라인', '라인코드', '온도', '진동', '회전수', '압력', '판정']
+print(df_result.columns.tolist())
