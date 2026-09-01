@@ -22,6 +22,7 @@ BASE = Path(__file__).resolve().parent
 
 
 First = pd.read_csv(BASE / "설비배치1.csv", encoding="utf-8-sig")
+First["진동"] = pd.to_numeric(First["진동"], errors="coerce") 
 Menti = pd.read_csv(BASE / "정제결과_멘티.csv", encoding="utf-8-sig")
 MentiNorm = pd.read_csv(BASE / "정규화_멘티.csv", encoding="utf-8-sig")
 Sensor = ["온도", "진동", "회전수", "압력"]
@@ -44,7 +45,8 @@ Keys = ["검사일시", "생산라인", "설비번호"]
 #
 # [멘티에게 한 문장으로]
 #   "○○라인만 △행이 사라졌는데, 그 이유는 ..."
- 
+
+print("1번")
 Dup_removed = First.drop_duplicates() 
 
 print(f"원본 {len(First)}행 / 완전중복 제거 {len(Dup_removed)}행 / 멘티 {len(Menti)}행")
@@ -52,7 +54,7 @@ print(f"원본 {len(First)}행 / 완전중복 제거 {len(Dup_removed)}행 / 멘
 print()
 print("[생산라인별 행 수]")
 rows = pd.DataFrame({
-    "원본": First["생산라인"].value_counts(),
+    "원본": Dup_removed["생산라인"].value_counts(),
     "멘티": Menti["생산라인"].value_counts(),
 }).sort_index()
 
@@ -68,10 +70,7 @@ temp_mean["차이"] = temp_mean["멘티"] - temp_mean["원본"]
 
 print(temp_mean.round(3))
 
-
-
-
-
+print()
 
 
 
@@ -94,8 +93,25 @@ print(temp_mean.round(3))
 #
 # [멘티에게 한 문장으로]
 #   "값이 0.03 다르면 컴퓨터는 다른 행으로 보지만, 현실에서는 ..."
- 
- 
+
+print("2번") 
+key = ["검사일시", "생산라인", "설비번호"]
+
+pairs = Dup_removed.duplicated(subset=key).sum()
+print(f"세 열이 같은 행: {pairs}개")
+
+triple = Dup_removed[Dup_removed.duplicated(subset=key, keep=False)]
+print(triple.sort_values(key)[key + ["온도", "압력"]])
+
+cleaned = Dup_removed.drop_duplicates(subset=key, keep="first").reset_index(drop=True)
+
+print(f"정리 후 표 크기: {cleaned.shape}")
+print("[정리 후 생산라인별 행 수]")
+print(cleaned["생산라인"].value_counts().sort_index())
+
+
+
+
 # ----------------------------------------
 # 문제 3. 이상 탐지를 다시 한다
 # ----------------------------------------
@@ -111,8 +127,34 @@ print(temp_mean.round(3))
 #
 # [멘티에게 한 문장으로]
 #   "온도 73.5도는 A라인이면 정상이지만 C라인에서는 ..."
- 
- 
+
+print()
+print("3번")
+
+#(가)
+allavg = cleaned["온도"].mean()
+allstd = cleaned["온도"].std(ddof=0)
+allz = (cleaned["온도"] - allavg) / allstd
+
+Ga = (allz.abs() > 2.5).sum()
+print(f"(가) 표 전체 기준: {Ga}개")
+
+#(나)
+
+lineavg = cleaned.groupby("생산라인")["온도"].transform("mean")
+linestd = cleaned.groupby("생산라인")["온도"].transform("std", ddof=0)
+linez = (cleaned["온도"] - lineavg) / linestd
+Na = (linez.abs() > 2.5).sum()
+print(f"(나) 라인별 기준: {Na}개")
+
+#(나)로 걸린 행
+
+Na_rows = cleaned[linez.abs() > 2.5].sort_values("생산라인")[key + ["온도"]]
+print(Na_rows)
+
+print("[라인별 온도 평균]")
+print(cleaned.groupby("생산라인")["온도"].mean().round(2))
+
 # ----------------------------------------
 # 문제 4. 채우기 전에 무엇을 먼저 해야 하는가
 # ----------------------------------------
@@ -134,7 +176,35 @@ print(temp_mean.round(3))
 #
 # [멘티에게 한 문장으로]
 #   "결측을 채우기 전에 이상값부터 봐야 하는 이유는 ..."
- 
+
+
+print("4번")
+
+outlier = linez.abs() > 2.5 
+clean_only = cleaned.loc[~outlier]
+
+line_temp_mean = pd.DataFrame({
+	"이상값 포함": cleaned.groupby("생산라인")["온도"].mean(),
+	"이상값 제외": clean_only.groupby("생산라인")["온도"].mean(),
+})
+line_temp_mean["차이"] = line_temp_mean["이상값 포함"] - line_temp_mean["이상값 제외"]
+
+print(line_temp_mean)
+
+
+#채우기
+filled = cleaned.copy()
+filled["온도"] = filled.groupby("생산라인")["온도"].transform(lambda x: x.fillna(x.mean()))
+filled["압력"] = filled.groupby("생산라인")["압력"].transform(lambda x: x.fillna(x.median()))
+filled["진동"] = filled.groupby("생산라인")["진동"].transform(lambda x: x.fillna(x.median()))
+
+print(f"남은 결측 총 개수: {filled.isna().sum().sum()}")
+print("[라인별 온도 평균]")
+print(filled.groupby("생산라인")["온도"].mean().round(2))
+print("[멘티 라인별 온도 평균]")
+print(Menti.groupby("생산라인")["온도"].mean().round(2))
+
+
  
 # ----------------------------------------
 # 문제 5. 한 번 걸러내고 끝내면 안 된다
@@ -155,7 +225,56 @@ print(temp_mean.round(3))
 # [멘티에게 한 문장으로]
 #   "큰 이상값 하나가 표준편차를 부풀려서 작은 이상값을 ..."
  
- 
+
+print()
+print("5번")
+
+capped = filled.copy()
+
+def find_outlier(df, col, k=3):
+    """라인별 z-점수로 이상값 마스크 만들기"""
+    m = df.groupby("생산라인")[col].transform("mean")
+    s = df.groupby("생산라인")[col].transform("std", ddof=0)
+    z = (df[col] - m) / s
+    return z.abs() > k
+
+def c_std(df):
+    return df[df["생산라인"] == "C라인"]["압력"].std(ddof=0)
+
+# ---- 1차 ----
+print(f"[처리 전] C라인 압력 표준편차: {c_std(capped):.3f}")
+
+mask = find_outlier(capped, "압력")
+print(f"\n1차 걸린 개수: {mask.sum()}")
+print(capped[mask][["생산라인", "압력"]])
+
+med = capped.groupby("생산라인")["압력"].median()
+capped.loc[mask, "압력"] = capped.loc[mask, "생산라인"].map(med)
+
+print(f"\n[1차 처리 후] C라인 압력 표준편차: {c_std(capped):.3f}")
+
+# ---- 2차 ----
+mask = find_outlier(capped, "압력")
+print(f"\n2차 걸린 개수: {mask.sum()}")
+print(capped[mask][["생산라인", "압력"]])
+
+med = capped.groupby("생산라인")["압력"].median()
+capped.loc[mask, "압력"] = capped.loc[mask, "생산라인"].map(med)
+
+print(f"\n[2차 처리 후] C라인 압력 표준편차: {c_std(capped):.3f}")
+
+# ---- 3차 ----
+mask = find_outlier(capped, "압력")
+print(f"\n3차 걸린 개수: {mask.sum()}")
+
+print()
+print("[라인별 행 수]")
+print(capped["생산라인"].value_counts().sort_index())
+
+
+
+
+
 # ----------------------------------------
 # 문제 6. 같은 행인데 스케일 값이 다르다
 # ----------------------------------------
@@ -177,7 +296,50 @@ print(temp_mean.round(3))
 #
 # [멘티에게 한 문장으로]
 #   "같은 A라인 기록인데 0.061이 아니라 0.536으로 찍힌 이유는 ..."
- 
+
+print()
+print("6번")
+
+# --- 내 표 정규화 (표 전체 min-max) ---
+MyNorm = capped[["검사일시", "생산라인"] + Sensor].copy()
+for c in Sensor:
+    lo, hi = MyNorm[c].min(), MyNorm[c].max()
+    MyNorm[c] = (MyNorm[c] - lo) / (hi - lo)
+
+# --- 키 만들기 ---
+MyNorm["키"] = MyNorm["검사일시"] + "_" + MyNorm["생산라인"]
+
+Mn = MentiNorm.copy()
+Mn.columns = [c.replace("정규화_", "") for c in Mn.columns]   # 열 이름 맞추기
+Mn["키"] = Mn["검사일시"] + "_" + Mn["생산라인"]
+
+
+merged = Mn.merge(MyNorm, on="키", suffixes=("_멘티", "_멘토"))
+print(f"맞춰진 행: {len(merged)}행  (멘티 {len(Mn)} / 멘토 {len(MyNorm)})")
+
+print()
+print("센서별 차이")
+for c in Sensor:
+    d = (merged[f"{c}_멘티"] - merged[f"{c}_멘토"]).abs()
+    print(f"  {c}: 최대 {d.max():.4f}, 0.05 초과 {int((d > 0.05).sum())}행")
+
+
+merged["온도차"] = (merged["온도_멘티"] - merged["온도_멘토"]).abs()
+print()
+print("온도 차이 상위 4행")
+print(merged.nlargest(4, "온도차")[["키", "온도_멘티", "온도_멘토", "온도차"]].round(4))
+
+
+print()
+print("라인별 정규화 온도 평균")
+cmp5 = pd.DataFrame({
+    "멘티": Mn.groupby("생산라인")["온도"].mean(),
+    "멘토": MyNorm.groupby("생산라인")["온도"].mean(),
+}).sort_index()
+print(cmp5.round(3))
+
+
+
  
 # ----------------------------------------
 # 문제 7. 스케일 기준은 학습에서만 잡는다
@@ -201,6 +363,57 @@ print(temp_mean.round(3))
 #   "테스트 값이 1을 넘은 건 잘못된 게 아니라 ..."
  
  
+print()
+print("7번")
+
+
+shuffled = capped.sample(frac=1, random_state=6).reset_index(drop=True)
+n = len(shuffled)
+i1, i2 = int(n * 0.6), int(n * 0.8)
+
+train = shuffled.iloc[:i1]
+valid = shuffled.iloc[i1:i2]
+test  = shuffled.iloc[i2:]
+
+print(f"학습 {len(train)} / 검증 {len(valid)} / 테스트 {len(test)}")
+
+
+train_ref = pd.DataFrame({"min": train[Sensor].min(), "max": train[Sensor].max()})
+all_ref   = pd.DataFrame({"min": capped[Sensor].min(), "max": capped[Sensor].max()})
+
+print()
+print("[학습 기준]")
+print(train_ref.round(3))
+print()
+print("[전체 기준]")
+print(all_ref.round(3))
+
+train_ref.to_csv(BASE / "스케일링기준.csv", encoding="utf-8-sig")
+
+
+def scale(df, ref):
+    out = pd.DataFrame(index=df.index)
+    for c in Sensor:
+        lo, hi = ref.loc[c, "min"], ref.loc[c, "max"]
+        out[c] = (df[c] - lo) / (hi - lo)
+    return out
+
+test_by_all   = scale(test, all_ref)
+test_by_train = scale(test, train_ref)
+
+out_all   = ((test_by_all < 0) | (test_by_all > 1)).sum().sum()
+out_train = ((test_by_train < 0) | (test_by_train > 1)).sum().sum()
+edge_all   = ((test_by_all == 0) | (test_by_all == 1)).sum().sum()
+edge_train = ((test_by_train == 0) | (test_by_train == 1)).sum().sum()
+
+print()
+print(f"0~1 밖: 전체기준 {out_all}개 / 학습기준 {out_train}개")
+print(f"정확히 0 또는 1: 전체기준 {edge_all}개 / 학습기준 {edge_train}개")
+print()
+print("학습 기준 변환값의 열별 최댓값")
+print(test_by_train.max().round(4))
+
+
 # ----------------------------------------
 # 문제 8. 새 배치가 들어왔다
 # ----------------------------------------
@@ -227,7 +440,64 @@ print(temp_mean.round(3))
 # [멘티에게 한 문장으로]
 #   "처음 보는 라인이 들어왔을 때 기존 기준을 그대로 쓰면 ..."
  
- 
+print()
+print("8번")
+
+
+saved_ref = pd.read_csv(BASE / "스케일링기준.csv", encoding="utf-8-sig", index_col=0)
+Second = pd.read_csv(BASE / "설비배치2.csv", encoding="utf-8-sig")
+Second["진동"] = pd.to_numeric(Second["진동"], errors="coerce")
+
+print("[배치2 라인별 행 수]")
+print(Second["생산라인"].value_counts().sort_index())
+
+known = set(First["생산라인"].unique())
+new_lines = sorted(set(Second["생산라인"].unique()) - known)
+new_mask = Second["생산라인"].isin(new_lines)
+print(f"\n새 라인 {len(new_lines)}종 {new_mask.sum()}행: {new_lines}")
+
+
+def scale(df, ref):
+    out = pd.DataFrame(index=df.index)
+    for c in Sensor:
+        lo, hi = ref.loc[c, "min"], ref.loc[c, "max"]
+        out[c] = (df[c] - lo) / (hi - lo)
+    return out
+
+s2 = scale(Second, saved_ref)
+s2["생산라인"] = Second["생산라인"]
+
+print("\n[라인별 정규화 온도 min/max]")
+print(s2.groupby("생산라인")["온도"].agg(["min", "max"]).round(3))
+
+
+mapping = {"A라인": 0, "B라인": 1, "C라인": 2}
+code = Second["생산라인"].map(mapping)
+print(f"\n라인코드 미매핑: {code.isna().sum()}행")
+
+Second_known = Second[~new_mask].reset_index(drop=True)
+s2k = scale(Second_known, saved_ref)
+
+outside = ((s2k < 0) | (s2k > 1)).sum().sum()
+print(f"\n기존 라인만: {len(Second_known)}행, 0~1 밖 {outside}개")
+print(pd.DataFrame({"min": s2k.min(), "max": s2k.max()}).round(4))
+
+
+s2k_again = scale(Second_known, saved_ref)
+print("\n같은 기준 재변환 동일:", s2k.equals(s2k_again))
+
+final = capped.copy()
+final["라인코드"] = final["생산라인"].map(mapping)
+final.to_csv(BASE / "정제결과_최종.csv", index=False, encoding="utf-8-sig")
+
+check = pd.read_csv(BASE / "정제결과_최종.csv", encoding="utf-8-sig")
+print(f"\n최종 {check.shape} / 결측 {int(check.isna().sum().sum())}")
+print(check["생산라인"].value_counts().sort_index())
+
+
+
+
+
 # ----------------------------------------
 # 마무리. 검수보고서.md 작성
 # ----------------------------------------
