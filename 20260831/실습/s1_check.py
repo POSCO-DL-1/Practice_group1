@@ -21,7 +21,10 @@ print(df.shape)
 
 # 결측 열과 개수
 # => df[특정 열].isna(): 해당 열에서 결측 구하기 (결측이 있으면 True)
-print(f"'온도': {df['온도'].isna().sum()}, '압력': {df['압력'].isna().sum()}")
+isna_dict = {}
+for c in ["온도", "압력"]:
+    isna_dict[c] = int(df[c].isna().sum())
+print(isna_dict)
 
 # 진동 열 첫 값의 자료형 이름
 print(df["진동"].dtype)
@@ -57,6 +60,7 @@ print()
 # 문제 3. 중복 행 제거
 # ----------------------------------------
 print("문제 3. 중복 행 제거")
+# 중복행 체크: duplicated() => True/False로 반환
 print(df.duplicated().sum())
 df = df.drop_duplicates()
 # print(list(df.index))  # 인덱스는 0부터 다시 매겨야하는데 안매겨져있음
@@ -101,8 +105,7 @@ print("문제 5. 생산라인별 요약")
 # df[df[특정 열 이름] == 열의 값 이름]
 # numeric_only=True: 결측 필터링 ("측정불가", "NaN"과 같은 문자값들 거르기)
 
-# 의문점: 앞에서 결측값들을 for문으로 수정했는데 왜 결측값이 남아서
-# 평균 구할 때, 'numeric_only=True'를 선언해야 하는지 의문입니다
+# 의문점: 앞에서 결측값들을 for문으로 수정했는데 왜 결측값이 남아서 평균 구할 때, 'numeric_only=True'를 선언해야 하는지 의문입니다
 # => 해결: 문제 4에서 결측값을 채우는 과정에서, "측정불가"와 같은 문자열을 NaN으로 바꾸고, 각각 중앙값, 평균값을 채워 넣었음
 #       하지만, 생산라인, 검사일시 등의 데이터들이 문자이기 때문에 평균을 구할 때, 'numeric_only=True'를 선언해야 함
 print(round(df.groupby("생산라인").mean(numeric_only=True), 2))
@@ -254,6 +257,7 @@ df_result = pd.read_csv("정제결과_멘티.csv", encoding="utf-8-sig")
 # pd.isna(arr).sum() — pandas가 문자열/숫자 섞여도 처리해줌
 print(
     df_result.shape,
+    # 리스트로 담긴 values를 sum()으로 합치기
     sum(df_result.isna().sum().values),
     int(df_result.duplicated().sum()),
 )
