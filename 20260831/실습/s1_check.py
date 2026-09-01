@@ -1,12 +1,12 @@
-import numpy as np
-import pandas as pd
-
 # 최종 산출물: 정제결과_멘티.csv  (문제 10에서 만듭니다)
 #
 # 필요한 파일: 설비배치1.csv (같은 폴더에 두세요)
 #   검사일시 / 생산라인(A·B·C) / 설비번호 / 온도 / 진동 / 회전수 / 압력 / 판정
-
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
 BASE = Path(__file__).resolve().parent
 
 df = pd.read_csv(BASE / "설비배치1.csv", encoding="utf-8-sig")
@@ -59,10 +59,11 @@ print()
 print("문제 3. 중복 행 제거")
 print(df.duplicated().sum())
 df = df.drop_duplicates()
-print(list(df.index)) #인덱스는 0부터 다시 매겨야하는데 안매겨져있음
+# print(list(df.index))  # 인덱스는 0부터 다시 매겨야하는데 안매겨져있음
 
+# # 인덱스는 0부터 다시 매깁니다. => reset_index(drop=True)
 df = df.drop_duplicates().reset_index(drop=True)
-print(list(df.index)) 
+# print(list(df.index))
 
 print(df.shape)
 print()
@@ -77,6 +78,10 @@ vib_avg = df["진동"].mean()
 
 # 해당 열들의 결측에 값을 채우기
 for column in ["온도", "진동", "압력"]:
+    # "측정불가"와 같은 문자열은 NaN으로 바꾸기
+    # errors="coerce": 숫자로 변환할 수 없는 값을 NaN으로 바꾸기
+    df[column] = pd.to_numeric(df[column], errors="coerce")
+
     if column == "압력":
         # 빈 칸을 그 열의 중앙값으로
         df[column] = df[column].fillna(df[column].median())
@@ -98,6 +103,8 @@ print("문제 5. 생산라인별 요약")
 
 # 의문점: 앞에서 결측값들을 for문으로 수정했는데 왜 결측값이 남아서
 # 평균 구할 때, 'numeric_only=True'를 선언해야 하는지 의문입니다
+# => 해결: 문제 4에서 결측값을 채우는 과정에서, "측정불가"와 같은 문자열을 NaN으로 바꾸고, 각각 중앙값, 평균값을 채워 넣었음
+#       하지만, 생산라인, 검사일시 등의 데이터들이 문자이기 때문에 평균을 구할 때, 'numeric_only=True'를 선언해야 함
 print(round(df.groupby("생산라인").mean(numeric_only=True), 2))
 
 prod_line = {}
@@ -147,6 +154,7 @@ print(prod_line)
 # 제거 (drop())
 
 # 의문점: 인덱스 따로 저장한 것(c_idx)과 열의 인덱스 번호가 다릅니다 (3씩 차이)
+# => 해결: 앞에 drop_duplicates()를 하고 reset_index(drop=True)로 인덱스를 다시 재정립하여 해결 완료
 df = df.drop(c_idx)
 prod_line = {}
 prod_line["A라인"] = len(df[df["생산라인"] == "A라인"])
@@ -162,29 +170,34 @@ print()
 print("문제 9. 0~1로 스케일 맞추고 파일로 남기기")
 # 센서 = ["온도", "진동", "회전수", "압력"]
 
+# 기존 자료 복사 작업 (260901)
+df_normal = df.copy()
+
 # Min-Max 정규화 계산
 # 정규화 값 = (현재값 - 최솟값) / (최댓값 - 최솟값)
 normal_list = []
 for c in 센서:
-    최소 = df[c].min()
-    최대 = df[c].max()
-    df[c] = (df[c] - 최소) / (최대 - 최소)
+    최소 = df_normal[c].min()
+    최대 = df_normal[c].max()
+    df_normal[c] = (df_normal[c] - 최소) / (최대 - 최소)
     # 정규화 값들 배열화 + 소수점 넷째 자리
-    normal_list.append(df[c])
-
+    normal_list.append(df_normal[c])
+# print("원본 데이터:", df)
+# print()
+# print("정규화 데이터:", df_normal)
 print(
-    {c: float(df[c].min()) for c in 센서}
+    {c: float(df_normal[c].min()) for c in 센서}
 )  # {'온도': 0.0, '진동': 0.0, '회전수': 0.0, '압력': 0.0}
 print(
-    {c: float(df[c].max()) for c in 센서}
+    {c: float(df_normal[c].max()) for c in 센서}
 )  # {'온도': 1.0, '진동': 1.0, '회전수': 1.0, '압력': 1.0}
-print({c: float(round((df[c].mean()), 3)) for c in 센서})
+print({c: float(round((df_normal[c].mean()), 3)) for c in 센서})
 normal_arr = np.round(np.array(normal_list).T, 4)
 # print(normal_arr.shape)
 
 # 이어 붙일 앞 열들 (각각 179개짜리 1차원 → (179, 1)로 변형)
-add_date = df["검사일시"].to_numpy()[:, None]  # (179, 1)
-add_line = df["생산라인"].to_numpy()[:, None]  # (179, 1)
+add_date = df_normal["검사일시"].to_numpy()[:, None]  # (179, 1)
+add_line = df_normal["생산라인"].to_numpy()[:, None]  # (179, 1)
 
 # 이어 붙이기 작업 => (179, 6) 모양의 행렬
 add_1 = np.concatenate([add_date, add_line, normal_arr], axis=1)
@@ -227,6 +240,8 @@ header = ["검사일시", "생산라인", "라인코드", "온도", "진동", "�
 # 새로운 열(라인코드)을 추가한 데이터프레임을 numpy 배열로
 # 정제한 데이터 값을 저장한 부분
 정제결과 = df[header].to_numpy()
+# print(정제결과)
+
 
 with open("정제결과_멘티.csv", "w", encoding="utf-8-sig", newline="") as f:
     writer = csv.writer(f)
