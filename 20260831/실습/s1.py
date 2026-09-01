@@ -56,7 +56,13 @@ print()
 # ----------------------------------------
 print("문제 3. 중복 행 제거")
 print(df.duplicated().sum())
-df = df.drop_duplicates()
+# df = df.drop_duplicates()
+# print(df)
+# print(df.shape)
+# print()
+# # 인덱스는 0부터 다시 매깁니다. => reset_index(drop=True)
+df = df.drop_duplicates().reset_index(drop=True)
+# print(df)
 print(df.shape)
 print()
 
@@ -140,7 +146,8 @@ print(prod_line)
 # 제거 (drop())
 
 # 의문점: 인덱스 따로 저장한 것(c_idx)과 열의 인덱스 번호가 다릅니다 (3씩 차이)
-df = df.drop(c_idx + 3)
+# => 해결: 앞에 drop_duplicates()를 하고 reset_index(drop=True)로 인덱스를 다시 재정립하여 해결 완료
+df = df.drop(c_idx)
 prod_line = {}
 prod_line["A라인"] = len(df[df["생산라인"] == "A라인"])
 prod_line["B라인"] = len(df[df["생산라인"] == "B라인"])
