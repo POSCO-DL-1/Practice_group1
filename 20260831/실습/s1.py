@@ -6,7 +6,10 @@ import pandas as pd
 # 필요한 파일: 설비배치1.csv (같은 폴더에 두세요)
 #   검사일시 / 생산라인(A·B·C) / 설비번호 / 온도 / 진동 / 회전수 / 압력 / 판정
 
-df = pd.read_csv("설비배치1.csv", encoding="utf-8-sig")
+from pathlib import Path
+BASE = Path(__file__).resolve().parent
+
+df = pd.read_csv(BASE / "설비배치1.csv", encoding="utf-8-sig")
 센서 = ["온도", "진동", "회전수", "압력"]
 
 # ----------------------------------------
